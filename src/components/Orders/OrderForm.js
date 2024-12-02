@@ -1,471 +1,538 @@
-// src/components/Orders/OrderForm.js
+import React, { useState, useEffect, useCallback } from 'react';
+import { Form, Input, Select, DatePicker, Radio, Button, Row, Col, Card, message, AutoComplete } from 'antd';
+import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { getPlants, getClients, getProducts, createMultipleOrders, getLatestSalesOrder, getPrices } from '../../services/api';
+import moment from 'moment';
 
-import React, { useState, useEffect } from 'react';
-import {
-  TextField,
-  Button,
-  Grid,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  Radio,
-  RadioGroup,
-  FormControlLabel,
-  Paper,
-  Typography,
-  Snackbar,
-  CircularProgress,
-  IconButton
-} from '@mui/material';
-import { Alert } from '@mui/material';
-import { Add as AddIcon, Remove as RemoveIcon } from '@mui/icons-material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import orderService from '../../services/orderService';
-import { getDepots, getClients, getProducts, getOrderById, createOrder, updateOrder } from '../../services/api';
+const { Option } = Select;
 
-const OrderForm = ({ orderId, onSubmit, onCancel }) => {
-  const [order, setOrder] = useState({
-    depotSource: '',
-    orderType: '',
-    clientReference: '',
-    operationDate: null,
-    commandeType: '',
-    clientFacturationSoldTo: '',
-    codeAdresseLivraisonShipTo: '',
-    nomClientLivraisonShipTo: '',
-    statutDroit: '',
-    adresseLivraison: '',
-    origine: '',
-    products: [{ code: '', label: '', regime: '', quantity: '', uom: '' }]
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
-
-  // These would be populated from your imported data
+const OrderForm = ({ order, onSave, onCancel, isReadOnly = false }) => {
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(true);
   const [depots, setDepots] = useState([]);
   const [clients, setClients] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [shipToOptions, setShipToOptions] = useState([]);
+  const [prices, setPrices] = useState({});
+  const [orderType, setOrderType] = useState('ZOR');
+  
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [depotsData, clientsData, productsData, pricesData] = await Promise.all([
+          getPlants(),
+          getClients(),
+          getProducts(),
+          getPrices()
+        ]);
+        setDepots(deduplicateData(depotsData.data, 'Plant Code'));
+        setClients(clientsData.data);
+        setAllProducts(deduplicateData(productsData.data, 'Material'));
+        setPrices(formatPrices(pricesData.data));
+        
+        // Create shipToOptions
+        const uniqueShipTo = new Set();
+        clientsData.data.forEach(client => {
+          uniqueShipTo.add(`${client['Customer Ship to']} - ${client['Customer ship to name']}`);
+        });
+        setShipToOptions(Array.from(uniqueShipTo).map(option => ({ value: option })));
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching form data:', error);
+        message.error('Failed to load form data. Please try again.');
+      }
+    };
+  
+    fetchData();
+  }, []);
 
   useEffect(() => {
-    fetchFormData();
-    if (orderId) {
-      fetchOrderDetails();
+    if (order) {
+      const formData = {
+        ...order,
+        'Requested delivery date': order['Requested delivery date'] ? moment(order['Requested delivery date']) : null,
+        depot: order.Plant,
+        products: [{
+          code: order['Material Code'],
+          name: order['Material Name'],
+          valuationType: order['Valution Type'],
+          quantity: order['Order Qty'],
+          uom: order['Sls.UOM'],
+          price: order['Unit Price'] || 0
+        }],
+        order_type: order.order_type || 'VRAC'
+      };
+      form.setFieldsValue(formData);
+      setOrderType(order['Order Type'] || 'ZOR');
+      handleShipToChange(`${order['Ship To Party']} - ${order['Ship To Name']}`);
+      filterProducts(order.order_type || 'VRAC');
+    } else {
+      form.setFieldsValue({ order_type: 'VRAC', "Order Type": 'ZOR' });
+      filterProducts('VRAC');
     }
-  }, [orderId]);
+  }, [order, form, allProducts]);
 
-  const fetchFormData = async () => {
-    try {
-      // These would be calls to your actual services
-      const depotsData = await orderService.getDepots();
-      const clientsData = await orderService.getClients();
-      const productsData = await orderService.getProducts();
-      setDepots(depotsData);
-      setClients(clientsData);
-      setProducts(productsData);
-    } catch (err) {
-      setError('Failed to fetch form data. Please try again.');
+  const deduplicateData = (data, key) => {
+    const uniqueMap = new Map();
+    data.forEach(item => {
+      if (!uniqueMap.has(item[key])) {
+        uniqueMap.set(item[key], item);
+      }
+    });
+    return Array.from(uniqueMap.values());
+  };
+
+  const formatPrices = (pricesData) => {
+    const formattedPrices = {};
+    pricesData.forEach(price => {
+      if (!formattedPrices[price['Ship to SAP']]) {
+        formattedPrices[price['Ship to SAP']] = {};
+      }
+      formattedPrices[price['Ship to SAP']][price['SAP material']] = price['Price Unit (HT)'];
+    });
+    return formattedPrices;
+  };
+
+  const filterProducts = (orderType) => {
+    const filtered = allProducts.filter(product => {
+      const dfAtClientLevel = (product['DF at client level'] || '').toLowerCase();
+      return orderType === 'PACK' ? dfAtClientLevel.includes('pack') : !dfAtClientLevel.includes('pack');
+    });
+    setFilteredProducts(filtered);
+  };
+
+  const handleOrderTypeChange = (e) => {
+    const newOrderType = e.target.value;
+    setOrderType(newOrderType);
+    filterProducts(newOrderType);
+    form.setFieldsValue({ 'Material Code': undefined });
+
+    if (newOrderType === 'ZCON') {
+      form.setFieldsValue({
+        Customer: undefined,
+        'Customer Name': undefined,
+        'Ship To Party': undefined,
+        'Ship To Name': undefined,
+        'City(Ship To)': undefined,
+        'Statut de droit': undefined,
+        'Customer ship to Address': undefined
+      });
+    } else {
+      form.setFieldsValue({
+        Customer: undefined,
+        'Customer Name': undefined,
+        'Statut de droit': undefined
+      });
     }
   };
 
-  const fetchOrderDetails = async () => {
-    try {
-      setLoading(true);
-      const orderData = await orderService.getOrderById(orderId);
-      setOrder(orderData);
-      setLoading(false);
-    } catch (err) {
-      setError('Failed to fetch order details. Please try again.');
-      setLoading(false);
-    }
-  };
+  const handleShipToChange = (value) => {
+    if (orderType !== 'ZCON') {
+      const [shipToCode, shipToName] = value.split(' - ');
+      const selectedClient = clients.find(client => 
+        client['Customer Ship to'] === shipToCode && 
+        client['Customer ship to name'] === shipToName
+      );
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setOrder(prevOrder => ({
-      ...prevOrder,
-      [name]: value
-    }));
-
-    // Auto-fill logic
-    if (name === 'clientFacturationSoldTo') {
-      const selectedClient = clients.find(client => client.id === value);
       if (selectedClient) {
-        setOrder(prevOrder => ({
-          ...prevOrder,
-          statutDroit: selectedClient.statutDroit,
-          codeAdresseLivraisonShipTo: selectedClient.defaultShipTo,
-          nomClientLivraisonShipTo: selectedClient.shipToName,
-          adresseLivraison: selectedClient.shipToAddress
-        }));
+        form.setFieldsValue({
+          'Ship To Party': shipToCode,
+          'Ship To Name': shipToName,
+          'City(Ship To)': selectedClient['Customer ship to city'],
+          'Customer ship to Address': selectedClient['Customer ship to Address'],
+          Customer: selectedClient['Customer Sold to'],
+          'Customer Name': selectedClient['Customer Sold to name'],
+          'Statut de droit': selectedClient['Statut de droit']
+        });
       }
     }
+    // Reset product prices when Ship To changes
+    const products = form.getFieldValue('products');
+    const updatedProducts = products.map(product => ({
+      ...product,
+      price: 0
+    }));
+    form.setFieldsValue({ products: updatedProducts });
+  };
 
-    if (name === 'codeAdresseLivraisonShipTo') {
-      const selectedClient = clients.find(client => client.id === order.clientFacturationSoldTo);
-      const selectedAddress = selectedClient.shipToAddresses.find(address => address.code === value);
-      if (selectedAddress) {
-        setOrder(prevOrder => ({
-          ...prevOrder,
-          nomClientLivraisonShipTo: selectedAddress.name,
-          adresseLivraison: selectedAddress.address
-        }));
+  const handleProductChange = useCallback((index, field, value) => {
+    const selectedProduct = filteredProducts.find(product => 
+      product['Material'] === value || product['Material description'] === value
+    );
+    if (selectedProduct) {
+      const newProducts = form.getFieldValue('products');
+      const shipTo = form.getFieldValue('Ship To Party');
+      const price = prices[shipTo]?.[selectedProduct['Material']] || 0;
+      
+      newProducts[index] = {
+        ...newProducts[index],
+        code: selectedProduct['Material'],
+        name: selectedProduct['Material description'],
+        uom: selectedProduct['Base Unit of Measure'],
+        price: orderType === 'ZCON' ? '' : price
+      };
+      form.setFieldsValue({ products: newProducts });
+
+      if (price === 0 && orderType !== 'ZCON') {
+        message.warning(`No price found for this product for the selected client. Please update the price data.`);
       }
     }
+  }, [filteredProducts, form, prices, orderType]);
+
+  const handleQuantityChange = (index, value) => {
+    const products = form.getFieldValue('products');
+    const updatedProducts = [...products];
+    updatedProducts[index] = {
+      ...updatedProducts[index],
+      quantity: value
+    };
+    form.setFieldsValue({ products: updatedProducts });
   };
 
-  const handleProductChange = (index, event) => {
-    const { name, value } = event.target;
-    const updatedProducts = [...order.products];
-    updatedProducts[index] = { ...updatedProducts[index], [name]: value };
-
-    if (name === 'code') {
-      const selectedProduct = products.find(product => product.code === value);
-      if (selectedProduct) {
-        updatedProducts[index].label = selectedProduct.label;
-        updatedProducts[index].uom = selectedProduct.uom;
-      }
-    }
-
-    setOrder(prevOrder => ({
-      ...prevOrder,
-      products: updatedProducts
-    }));
+  const handleDepotSelect = (value, option) => {
+    form.setFieldsValue({ depot: value });
   };
 
-  const addProduct = () => {
-    setOrder(prevOrder => ({
-      ...prevOrder,
-      products: [...prevOrder.products, { code: '', label: '', regime: '', quantity: '', uom: '' }]
-    }));
-  };
-
-  const removeProduct = (index) => {
-    setOrder(prevOrder => ({
-      ...prevOrder,
-      products: prevOrder.products.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setLoading(true);
+  const onFinish = async (values) => {
     try {
-      // Validation
-      if (!validateOrder()) {
-        setLoading(false);
-        return;
-      }
-
-      let result;
-      if (orderId) {
-        result = await orderService.updateOrder(orderId, order);
+      console.log('Form values:', values);
+  
+      let salesOrderNumber;
+      if (order && order['Sales Order']) {
+        salesOrderNumber = order['Sales Order'];
       } else {
-        result = await orderService.createOrder(order);
+        salesOrderNumber = await getLatestSalesOrder();
+        salesOrderNumber += 1;
       }
-      setSnackbar({ open: true, message: `Order ${orderId ? 'updated' : 'created'} successfully`, severity: 'success' });
-      if (onSubmit) onSubmit(result);
-    } catch (err) {
-      setError(`Failed to ${orderId ? 'update' : 'create'} order. ${err.message}`);
-      setSnackbar({ open: true, message: `Failed to ${orderId ? 'update' : 'create'} order`, severity: 'error' });
-    } finally {
-      setLoading(false);
+  
+      const ordersData = values.products.map((product, index) => {
+        const baseOrderData = {
+          'Sales Order': salesOrderNumber,
+          'Order Type': values["Order Type"],
+          Customer: values.Customer,
+          'Customer Name': values["Customer Name"],
+          Plant: values.depot,
+          'Plant Name': depots.find(d => d['Plant Code'] === values.depot)?.Description,
+          'Valution Type': product.valuationType,
+          Item: index + 1,  // Increment Item number for each product
+          'Material Code': product.code,
+          'Material Name': product.name,
+          'Order Qty': parseFloat(product.quantity),
+          'Sls.UOM': product.uom,
+          'Requested delivery date': values["Requested delivery date"].format('YYYY-MM-DD'),
+          'Pat.Doc': values["Pat.Doc"] || '',
+          order_type: values.order_type,
+        };
+  
+        if (values["Order Type"] === 'ZCON') {
+          return {
+            ...baseOrderData,
+            Customer: values.Customer.startsWith('CP') ? values.Customer : `CP${values.Customer}`,
+            'Ship To Party': values.Customer.startsWith('CP') ? values.Customer : `CP${values.Customer}`,
+            'Ship To Name': values["Customer Name"],
+            'City(Ship To)': 'Casablanca',
+            'Total Price': 0,
+            'Unit Price': 0
+          };
+        } else {
+          return {
+            ...baseOrderData,
+            'Ship To Party': values["Ship To Party"],
+            'Ship To Name': values["Ship To Name"],
+            'City(Ship To)': values["City(Ship To)"],
+            'Unit Price': product.price,
+            'Total Price': product.quantity * product.price
+          };
+        }
+      });
+  
+      console.log('Orders to process:', JSON.stringify(ordersData, null, 2));
+  
+      const result = await createMultipleOrders(ordersData);
+      
+      console.log('API response:', JSON.stringify(result, null, 2));
+  
+      if (result.createdOrders && result.createdOrders.length > 0) {
+        console.log(`${result.createdOrders.length} new order record(s) created under Sales Order ${salesOrderNumber}`);
+        message.success(`${result.createdOrders.length} new order record(s) created successfully under Sales Order ${salesOrderNumber}`);
+      }
+      if (result.updatedOrders && result.updatedOrders.length > 0) {
+        console.log(`${result.updatedOrders.length} order record(s) updated`);
+        message.success(`${result.updatedOrders.length} order record(s) updated successfully`);
+      }
+      if (result.errors && result.errors.length > 0) {
+        console.log(`${result.errors.length} order record(s) failed to process`);
+        message.error(`${result.errors.length} order record(s) failed to process`);
+      }
+  
+      onSave(result);
+    } catch (error) {
+      console.error('Error processing orders:', error);
+      message.error('Failed to process orders. Please try again.');
     }
-  };
-
-  const validateOrder = () => {
-    // Check if VRAC and PACK are mixed
-    const productTypes = order.products.map(product => {
-      const productData = products.find(p => p.code === product.code);
-      return productData ? productData.type : null;
-    });
-    if (productTypes.includes('VRAC') && productTypes.includes('PACK')) {
-      setError('VRAC and PACK product types cannot be mixed in a single order.');
-      return false;
-    }
-
-    // Check if products have pre-defined prices
-    const productsWithoutPrices = order.products.filter(product => {
-      const productData = products.find(p => p.code === product.code);
-      return productData && !productData.hasPrice;
-    });
-    if (productsWithoutPrices.length > 0) {
-      setError('All selected products must have pre-defined prices.');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSnackbarClose = (event, reason) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    setSnackbar({ ...snackbar, open: false });
   };
 
   if (loading) {
-    return <CircularProgress />;
-  }
-
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
+    return <div>Loading...</div>;
   }
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <Paper elevation={3} sx={{ p: 3, m: 2 }}>
-        <Typography variant="h5" gutterBottom>
-          {orderId ? 'Edit Order' : 'Create New Order'}
-        </Typography>
-        <form onSubmit={handleSubmit}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Dépôt source</InputLabel>
+    <Card title={order ? (isReadOnly ? 'View Order' : 'Edit Order') : 'New Order'}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={onFinish}
+        initialValues={{
+          order_type: 'VRAC',
+          products: [{}]
+        }}
+      >
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item name="depot" label="Dépôt source" rules={[{ required: true }]}>
+              <AutoComplete
+                placeholder="Select or type depot"
+                disabled={isReadOnly}
+                options={depots.map(depot => ({
+                  value: depot['Plant Code'],
+                  label: `${depot['Plant Code']} - ${depot.Description}`
+                }))}
+                filterOption={(inputValue, option) =>
+                  option.label.toLowerCase().indexOf(inputValue.toLowerCase()) !== -1
+                }
+                onSelect={handleDepotSelect}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="Order Type" label="Type de commande" rules={[{ required: true }]}>
+              <Select 
+                placeholder="Select order type" 
+                disabled={isReadOnly}
+                onChange={(value) => setOrderType(value)}
+              >
+                {['ZOR', 'ZCON', 'ZOC', 'SUR1'].map(type => (
+                  <Option key={type} value={type}>{type}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            {orderType === 'ZCON' ? (
+              <Form.Item 
+                name="Customer" 
+                label="Dépôt destinataire"
+                rules={[{ required: true }]}
+              >
                 <Select
-                  name="depotSource"
-                  value={order.depotSource}
-                  onChange={handleChange}
-                  required
+                  placeholder="Select destination depot"
+                  onChange={(value) => {
+                    const selectedDepot = depots.find(depot => `CP${depot['Plant Code']}` === value);
+                    if (selectedDepot) {
+                      form.setFieldsValue({
+                        'Customer Name': selectedDepot.Description,
+                        'Ship To Party': value,
+                        'Ship To Name': selectedDepot.Description,
+                        'City(Ship To)': 'Casablanca'
+                      });
+                    }
+                  }}
+                  disabled={isReadOnly}
+                  showSearch
+                  optionFilterProp="children"
                 >
                   {depots.map(depot => (
-                    <MenuItem key={depot.id} value={depot.id}>{depot.name}</MenuItem>
+                    <Option key={depot['Plant Code']} value={`CP${depot['Plant Code']}`}>
+                      CP{depot['Plant Code']} - {depot.Description}
+                    </Option>
                   ))}
                 </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Type de commande</InputLabel>
-                <Select
-                  name="orderType"
-                  value={order.orderType}
-                  onChange={handleChange}
-                  required
-                >
-                  {['ZOR', 'ZCON', 'ZOC', 'SUR1'].map(type => (
-                    <MenuItem key={type} value={type}>{type}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Référence client</InputLabel>
-                <Select
-                  name="clientReference"
-                  value={order.clientReference}
-                  onChange={handleChange}
-                  required
-                >
-                  {clients.map(client => (
-                    <MenuItem key={client.id} value={client.id}>{client.reference}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <DatePicker
-                label="Date d'opération"
-                value={order.operationDate}
-                onChange={(newValue) => setOrder(prev => ({ ...prev, operationDate: newValue }))}
-                renderInput={(params) => <TextField {...params} fullWidth required />}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControl component="fieldset">
-                <Typography variant="subtitle1">Commande Type</Typography>
-                <RadioGroup
-                  name="commandeType"
-                  value={order.commandeType}
-                  onChange={handleChange}
-                  row
-                >
-                  <FormControlLabel value="Vrac" control={<Radio />} label="Vrac (Bulk)" />
-                  <FormControlLabel value="Pack" control={<Radio />} label="Pack (Packaged)" />
-                </RadioGroup>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Nom du client de facturation Sold To</InputLabel>
-                <Select
-                  name="clientFacturationSoldTo"
-                  value={order.clientFacturationSoldTo}
-                  onChange={handleChange}
-                  required
-                >
-                  {clients.map(client => (
-                    <MenuItem key={client.id} value={client.id}>{client.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Code adresse de livraison Ship To</InputLabel>
-                <Select
-                  name="codeAdresseLivraisonShipTo"
-                  value={order.codeAdresseLivraisonShipTo}
-                  onChange={handleChange}
-                  required
-                >
-                  {clients.find(c => c.id === order.clientFacturationSoldTo)?.shipToAddresses.map(address => (
-                    <MenuItem key={address.code} value={address.code}>{address.code}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Nom du client de livraison Ship To"
-                name="nomClientLivraisonShipTo"
-                value={order.nomClientLivraisonShipTo}
-                InputProps={{ readOnly: true }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Statut de droit"
-                name="statutDroit"
-                value={order.statutDroit}
-                InputProps={{ readOnly: true }}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Adresse de livraison"
-                name="adresseLivraison"
-                value={order.adresseLivraison}
-                InputProps={{ readOnly: true }}
-                multiline
-                rows={2}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Origine"
-                name="origine"
-                value={order.origine}
-                onChange={handleChange}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="h6">Products</Typography>
-              {order.products.map((product, index) => (
-                <Grid container spacing={2} key={index} alignItems="center">
-                  <Grid item xs={12} sm={2}>
-                    <FormControl fullWidth>
-                      <InputLabel>Code produit</InputLabel>
-                      <Select
-                        name="code"
-                        value={product.code}
-                        onChange={(e) => handleProductChange(index, e)}
-                        required
-                      >
-                        {products.map(p => (
-                          <MenuItem key={p.code} value={p.code}>{p.code}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} sm={2}>
-                    <TextField
-                      fullWidth
-                      label="Libellé produit"
-                      name="label"
-                      value={product.label}
-                      InputProps={{ readOnly: true }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={2}>
-                    <FormControl fullWidth>
-                      <InputLabel>Régime douanier</InputLabel>
-                      <Select
-                        name="regime"
-                        value={product.regime}
-                        onChange={(e) => handleProductChange(index, e)}
-                        required
-                      >
-                        {['Dédouané', 'Sous-douane', 'Pêche', 'Saharien'].map(regime => (
-                          <MenuItem key={regime} value={regime}>{regime}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} sm={2}>
-                    <TextField
-                      fullWidth
-                      label="Quantité"
-                      name="quantity"
-                      type="number"
-                      value={product.quantity}
-                      onChange={(e) => handleProductChange(index, e)}
-                      required
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={2}>
-                    <TextField
-                      fullWidth
-                      label="Unité de mesure UoM"
-                      name="uom"
-                      value={product.uom}
-                      InputProps={{ readOnly: true }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={2}>
-                    <IconButton onClick={() => removeProduct(index)} color="secondary">
-                      <RemoveIcon />
-                    </IconButton>
-                  </Grid>
-                </Grid>
-              ))}
-              <Button
-                startIcon={<AddIcon />}
-                onClick={addProduct}
-                variant="outlined"
-                sx={{ mt: 2 }}
+              </Form.Item>
+            ) : (
+              <Form.Item 
+                name="Ship To Party"
+                label="Code adresse de livraison Ship To"
+                rules={[{ required: true }]}
               >
-                Add Product
-              </Button>
-            </Grid>
-            <Grid item xs={12}>
-              <Button
-                type="submit"
-                variant="contained"
-                color="primary"
-                sx={{ mr: 1 }}
-                disabled={loading}
+                <AutoComplete
+                  placeholder="Select or type ship to address"
+                  disabled={isReadOnly}
+                  options={shipToOptions}
+                  onSelect={handleShipToChange}
+                  filterOption={(inputValue, option) =>
+                    option.value.toLowerCase().indexOf(inputValue.toLowerCase()) !== -1
+                  }
+                />
+              </Form.Item>
+            )}
+          </Col>
+          <Col span={12}>
+            <Form.Item 
+              name="Customer Name" label={orderType === 'ZCON' ? "Nom du dépôt de facturation" : "Nom du client de facturation Sold To"}
               >
-                {loading ? <CircularProgress size={24} /> : (orderId ? 'Update Order' : 'Create Order')}
+                <Input disabled />
+              </Form.Item>
+            </Col>
+          </Row>
+  
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="Requested delivery date" label="Date d'opération souhaité" rules={[{ required: true }]}>
+                <DatePicker style={{ width: '100%' }} disabled={isReadOnly} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="order_type" label="Order Type" rules={[{ required: true }]}>
+                <Radio.Group onChange={handleOrderTypeChange} disabled={isReadOnly}>
+                  <Radio value="PACK">PACK</Radio>
+                  <Radio value="VRAC">VRAC</Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+          </Row>
+  
+          {orderType !== 'ZCON' && (
+            <>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item name="Ship To Name" label="Nom du client de livraison Ship To">
+                    <Input disabled />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="Customer" label="Référence client">
+                    <Input disabled />
+                  </Form.Item>
+                </Col>
+              </Row>
+  
+              <Form.Item name="Statut de droit" label="Statut de droit">
+                <Input disabled />
+              </Form.Item>
+  
+              <Form.Item name="Customer ship to Address" label="Adresse de Livraison">
+                <Input disabled />
+              </Form.Item>
+  
+              <Form.Item name="City(Ship To)" label="Ville de livraison">
+                <Input disabled />
+              </Form.Item>
+            </>
+          )}
+  
+          <Form.List name="products">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map((field, index) => (
+                  <Card 
+                    key={field.key}
+                    title={`Product ${index + 1}`} 
+                    extra={!isReadOnly && fields.length > 1 && (
+                      <MinusCircleOutlined onClick={() => remove(field.name)} />
+                    )}
+                  >
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item
+                          name={[field.name, 'code']}
+                          label="Code produit"
+                          rules={[{ required: true, message: 'Missing product code' }]}
+                        >
+                          <Select
+                            placeholder="Select product code"
+                            onChange={(value) => handleProductChange(index, 'code', value)}
+                            disabled={isReadOnly}
+                            showSearch
+                            optionFilterProp="children"
+                          >
+                            {filteredProducts.map(product => (
+                              <Option key={product.Material} value={product.Material}>
+                                {product.Material} - {product['Material description']}
+                              </Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item
+                          name={[field.name, 'name']}
+                          label="Libellé produit"
+                        >
+                          <Input disabled />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <Form.Item
+                          name={[field.name, 'valuationType']}
+                          label="Valuation Type"
+                          rules={[{ required: true, message: 'Missing valuation type' }]}
+                        >
+                          <Select placeholder="Select valuation type" disabled={isReadOnly}>
+                            {['Dédouané', 'Sous-douane', 'Pêche', 'Saharien'].map(type => (
+                              <Option key={type} value={type}>{type}</Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item
+                          name={[field.name, 'quantity']}
+                          label="Quantité"
+                          rules={[{ required: true, message: 'Missing quantity' }]}
+                        >
+                          <Input 
+                            type="number" 
+                            disabled={isReadOnly}
+                            onChange={(e) => handleQuantityChange(index, e.target.value)} 
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item
+                          name={[field.name, 'uom']}
+                          label="UOM"
+                        >
+                          <Input disabled />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Card>
+                ))}
+                {!isReadOnly && (
+                  <Form.Item>
+                    <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                      Add Product
+                    </Button>
+                  </Form.Item>
+                )}
+              </>
+            )}
+          </Form.List>
+  
+          <Form.Item name="Pat.Doc" label="PAT.Doc">
+            <Input disabled={isReadOnly} />
+          </Form.Item>
+  
+          <Form.Item>
+            <Button onClick={onCancel} style={{ marginRight: 8 }}>
+              Cancel
+            </Button>
+            {!isReadOnly && (
+              <Button type="primary" htmlType="submit">
+                {order ? 'Update Order' : 'Create Order'}
               </Button>
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={onCancel}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-            </Grid>
-          </Grid>
-        </form>
-      </Paper>
-      <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={handleSnackbarClose}>
-        <Alert onClose={handleSnackbarClose} severity={snackbar.severity} sx={{ width: '100%' }}>
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </LocalizationProvider>
-  );
-};
-
-export default OrderForm;
+            )}
+          </Form.Item>
+        </Form>
+      </Card>
+    );
+  };
+  
+  export default OrderForm;

@@ -1,21 +1,14 @@
 import React from 'react';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Link from '@mui/material/Link';
+import { Layout } from 'antd';
 
-function Footer() {
+const { Footer } = Layout;
+
+const AppFooter = () => {
   return (
-    <Box sx={{ bgcolor: 'background.paper', p: 6 }} component="footer">
-      <Typography variant="body2" color="text.secondary" align="center">
-        {'Copyright © '}
-        <Link color="inherit" href="https://your-website.com/">
-          IT Shore
-        </Link>{' '}
-        {new Date().getFullYear()}
-        {'.'}
-      </Typography>
-    </Box>
+    <Footer style={{ textAlign: 'center' }}>
+      Fuel Delivery Management System ©{new Date().getFullYear()} Created by IT SHORE
+    </Footer>
   );
-}
+};
 
-export default Footer;
+export default AppFooter;

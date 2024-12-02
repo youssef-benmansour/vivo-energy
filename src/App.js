@@ -1,53 +1,72 @@
-// src/App.js
-
 import React from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import Box from '@mui/material/Box';
-
-// Import components
-import Header from './components/Header';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { Layout } from 'antd';
+import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider, AuthContext } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
-import Footer from './components/Footer';
-
-// Import pages
+import AppHeader from './components/Header';
+import AppFooter from './components/Footer';
 import Dashboard from './pages/Dashboard';
 import DataImport from './pages/DataImport';
 import OrderManagement from './pages/OrderManagement';
 import TripPlanning from './pages/TripPlanning';
 import LoadingConfirmation from './pages/LoadingConfirmation';
-import DocumentGeneration from './pages/DocumentGeneration';
 import Reporting from './pages/Reporting';
+import Login from './components/Auth/Login';
+import Register from './components/Auth/Register';
 
-// Import theme
-import theme from './theme';
+const { Content } = Layout;
+
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = React.useContext(AuthContext);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+
+  return children;
+};
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Router>
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Header />
-          <Box sx={{ display: 'flex', flex: 1 }}>
-            <Sidebar />
-            <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/import" element={<DataImport />} />
-                <Route path="/orders" element={<OrderManagement />} />
-                <Route path="/trips" element={<TripPlanning />} />
-                <Route path="/loading" element={<LoadingConfirmation />} />
-                <Route path="/documents" element={<DocumentGeneration />} />
-                <Route path="/reports" element={<Reporting />} />
-              </Routes>
-            </Box>
-          </Box>
-          <Footer />
-        </Box>
-      </Router>
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider>
+        <Router>
+          <Layout style={{ minHeight: '100vh' }}>
+            <AppHeader />
+            <Layout>
+              <Sidebar />
+              <Layout style={{ padding: '0 24px 24px' }}>
+                <Content
+                  className="site-layout-background"
+                  style={{
+                    padding: 24,
+                    margin: 0,
+                    minHeight: 280,
+                  }}
+                >
+                  <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
+                    <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                    <Route path="/import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
+                    <Route path="/orders" element={<ProtectedRoute><OrderManagement /></ProtectedRoute>} />
+                    <Route path="/trips" element={<ProtectedRoute><TripPlanning /></ProtectedRoute>} />
+                    <Route path="/loadings" element={<ProtectedRoute><LoadingConfirmation /></ProtectedRoute>} />
+                    <Route path="/reporting" element={<ProtectedRoute><Reporting /></ProtectedRoute>} />
+                    </Routes>
+                </Content>
+                <AppFooter />
+              </Layout>
+            </Layout>
+          </Layout>
+        </Router>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
 

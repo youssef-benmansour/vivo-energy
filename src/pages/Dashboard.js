@@ -1,164 +1,260 @@
-// src/pages/Dashboard.js
-
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { 
-  Container, 
-  Grid, 
-  Paper, 
-  Typography, 
-  List, 
-  ListItem, 
-  ListItemText,
-  Box,
-  CircularProgress
-} from '@mui/material';
-import {
-  LocalShipping as TruckIcon,
-  ShoppingCart as OrderIcon,
-  LocalGasStation as FuelIcon,
-  Person as ClientIcon
-} from '@mui/icons-material';
+import { Card, Row, Col, Statistic, Progress, Table, DatePicker, Select, Typography } from 'antd';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { TrendingUp, TrendingDown, Truck, DollarSign, Droplet, Calendar, MapPin } from 'lucide-react';
 
-// API base URL
-const API_BASE_URL = 'http://localhost:3000/api'; // Adjust this to match your backend URL
+const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
+const { Option } = Select;
 
-const MetricCard = ({ title, value, icon }) => (
-  <Paper elevation={3} sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" component="h2">
-        {title}
-      </Typography>
-      <Typography variant="h4" component="p">
-        {value}
-      </Typography>
-    </Box>
-    {icon}
-  </Paper>
-);
-
-function Dashboard() {
-  const [dashboardData, setDashboardData] = useState(null);
+const Dashboard = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [dateRange, setDateRange] = useState([null, null]);
+  const [selectedRegion, setSelectedRegion] = useState('all');
+
+  // Mock data - replace with actual API calls
+  const [orderStats, setOrderStats] = useState({});
+  const [deliveryStats, setDeliveryStats] = useState({});
+  const [revenueData, setRevenueData] = useState([]);
+  const [productDistribution, setProductDistribution] = useState([]);
+  const [topClients, setTopClients] = useState([]);
+  const [fleetUtilization, setFleetUtilization] = useState(0);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const [ordersResponse, trucksResponse, clientsResponse, productsResponse] = await Promise.all([
-          axios.get(`${API_BASE_URL}/orders`),
-          axios.get(`${API_BASE_URL}/trucks`),
-          axios.get(`${API_BASE_URL}/clients`),
-          axios.get(`${API_BASE_URL}/products`)
-        ]);
+    // Simulate API calls
+    setTimeout(() => {
+      setOrderStats({
+        total: 1250,
+        completed: 1100,
+        pending: 150,
+        growth: 15,
+      });
+      setDeliveryStats({
+        total: 950,
+        onTime: 900,
+        delayed: 50,
+        efficiency: 94.7,
+      });
+      setRevenueData([
+        { name: 'Jan', value: 4000 },
+        { name: 'Feb', value: 3000 },
+        { name: 'Mar', value: 5000 },
+        { name: 'Apr', value: 4500 },
+        { name: 'May', value: 6000 },
+        { name: 'Jun', value: 5500 },
+      ]);
+      setProductDistribution([
+        { name: 'Gasoline', value: 45 },
+        { name: 'Diesel', value: 30 },
+        { name: 'Kerosene', value: 15 },
+        { name: 'LPG', value: 10 },
+      ]);
+      setTopClients([
+        { name: 'ABC Company', orders: 120, revenue: 250000 },
+        { name: 'XYZ Corp', orders: 95, revenue: 200000 },
+        { name: '123 Industries', orders: 80, revenue: 180000 },
+        { name: 'Best Fuels Ltd', orders: 75, revenue: 160000 },
+        { name: 'Green Energy Co', orders: 60, revenue: 130000 },
+      ]);
+      setFleetUtilization(78);
+      setLoading(false);
+    }, 1500);
+  }, [dateRange, selectedRegion]);
 
-        const totalOrders = ordersResponse.data.length;
-        const activeTrucks = trucksResponse.data.length;
-        const totalClients = clientsResponse.data.length;
-        const totalProducts = productsResponse.data.length;
+  const handleDateRangeChange = (dates) => {
+    setDateRange(dates);
+    setLoading(true);
+    // Trigger API calls with new date range
+  };
 
-        // Calculate total fuel delivered (assuming Order Qty is in liters)
-        const fuelDelivered = ordersResponse.data.reduce((total, order) => total + parseFloat(order["Order Qty"] || 0), 0);
-
-        // Get recent activity (using last 5 orders as an example)
-        const recentActivity = ordersResponse.data
-          .slice(-5)
-          .reverse()
-          .map(order => ({
-            id: order.id,
-            action: `Order #${order["Sales Order"]} placed for ${order["Customer Name"]}`,
-            timestamp: new Date(order["Requested delivery date"]).toLocaleString()
-          }));
-
-        setDashboardData({
-          totalOrders,
-          activeTrucks,
-          fuelDelivered,
-          totalClients,
-          totalProducts,
-          recentActivity
-        });
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, []);
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
-        <Typography color="error">{error}</Typography>
-      </Box>
-    );
-  }
+  const handleRegionChange = (value) => {
+    setSelectedRegion(value);
+    setLoading(true);
+    // Trigger API calls with new region
+  };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Dashboard
-      </Typography>
-      <Grid container spacing={3}>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard 
-            title="Total Orders" 
-            value={dashboardData.totalOrders} 
-            icon={<OrderIcon fontSize="large" color="primary" />} 
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard 
-            title="Active Trucks" 
-            value={dashboardData.activeTrucks} 
-            icon={<TruckIcon fontSize="large" color="primary" />} 
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard 
-            title="Fuel Delivered (L)" 
-            value={dashboardData.fuelDelivered.toLocaleString(undefined, { maximumFractionDigits: 2 })} 
-            icon={<FuelIcon fontSize="large" color="primary" />} 
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <MetricCard 
-            title="Total Clients" 
-            value={dashboardData.totalClients} 
-            icon={<ClientIcon fontSize="large" color="primary" />} 
-          />
-        </Grid>
-        <Grid item xs={12}>
-          <Paper elevation={3} sx={{ p: 2 }}>
-            <Typography variant="h6" component="h2" gutterBottom>
-              Recent Activity
-            </Typography>
-            <List>
-              {dashboardData.recentActivity.map((activity) => (
-                <ListItem key={activity.id}>
-                  <ListItemText 
-                    primary={activity.action} 
-                    secondary={activity.timestamp} 
-                  />
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
-        </Grid>
-      </Grid>
-    </Container>
+    <div className="dashboard">
+      <div className="dashboard-header">
+        <Title level={2}>Fuel Delivery Management Dashboard</Title>
+        <div className="dashboard-controls">
+          <RangePicker onChange={handleDateRangeChange} />
+          <Select defaultValue="all" style={{ width: 120 }} onChange={handleRegionChange}>
+            <Option value="all">All Regions</Option>
+            <Option value="north">North</Option>
+            <Option value="south">South</Option>
+            <Option value="east">East</Option>
+            <Option value="west">West</Option>
+          </Select>
+        </div>
+      </div>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Total Orders"
+              value={orderStats.total}
+              prefix={<Truck size={20} />}
+              suffix={
+                <span className={`trend-indicator ${orderStats.growth >= 0 ? 'positive' : 'negative'}`}>
+                  {orderStats.growth >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                  {Math.abs(orderStats.growth)}%
+                </span>
+              }
+              loading={loading}
+            />
+            <Progress
+              percent={(orderStats.completed / orderStats.total) * 100}
+              strokeColor="#52c41a"
+              format={(percent) => `${percent.toFixed(1)}% Completed`}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Delivery Efficiency"
+              value={deliveryStats.efficiency}
+              precision={1}
+              suffix="%"
+              prefix={<Calendar size={20} />}
+              loading={loading}
+            />
+            <Progress
+              percent={deliveryStats.efficiency}
+              strokeColor="#1890ff"
+              format={(percent) => `${deliveryStats.onTime} On-time`}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Fleet Utilization"
+              value={fleetUtilization}
+              suffix="%"
+              prefix={<Truck size={20} />}
+              loading={loading}
+            />
+            <Progress percent={fleetUtilization} strokeColor="#faad14" />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Total Revenue"
+              value={revenueData.reduce((sum, item) => sum + item.value, 0)}
+              prefix={<DollarSign size={20} />}
+              loading={loading}
+            />
+            <div className="revenue-trend">
+              <ResponsiveContainer width="100%" height={50}>
+                <LineChart data={revenueData}>
+                  <Line type="monotone" dataKey="value" stroke="#52c41a" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: '20px' }}>
+        <Col xs={24} lg={12}>
+          <Card title="Revenue Trend" extra={<MapPin size={16} />}>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={revenueData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#1890ff" name="Revenue" />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="Product Distribution" extra={<Droplet size={16} />}>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={productDistribution}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                  label
+                >
+                  {productDistribution.map((entry, index) => (
+                    <Cell key={`${index}`} fill={['#1890ff', '#52c41a', '#faad14', '#f5222d'][index % 4]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: '20px' }}>
+        <Col xs={24}>
+          <Card title="Top Performing Clients" extra={<DollarSign size={16} />}>
+            <Table
+              dataSource={topClients}
+              columns={[
+                { title: 'Client Name', dataIndex: 'name', key: 'name' },
+                { title: 'Total Orders', dataIndex: 'orders', key: 'orders' },
+                { 
+                  title: 'Total Revenue', 
+                  dataIndex: 'revenue', 
+                  key: 'revenue',
+                  render: (value) => `$${value.toLocaleString()}`
+                },
+              ]}
+              pagination={false}
+              loading={loading}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <style jsx>{`
+        .dashboard {
+          padding: 24px;
+          background: #f0f2f5;
+        }
+        .dashboard-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+        }
+        .dashboard-controls {
+          display: flex;
+          gap: 16px;
+        }
+        .trend-indicator {
+          display: inline-flex;
+          align-items: center;
+          margin-left: 8px;
+          font-size: 14px;
+        }
+        .trend-indicator.positive {
+          color: #52c41a;
+        }
+        .trend-indicator.negative {
+          color: #f5222d;
+        }
+        .revenue-trend {
+          margin-top: 16px;
+        }
+      `}</style>
+    </div>
   );
-}
+};
 
 export default Dashboard;

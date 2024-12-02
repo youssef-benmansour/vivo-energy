@@ -1,57 +1,58 @@
-import React from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import Drawer from '@mui/material/Drawer';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import LocalShippingIcon from '@mui/icons-material/LocalShipping';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import DescriptionIcon from '@mui/icons-material/Description';
-import BarChartIcon from '@mui/icons-material/BarChart';
+import React, { useContext } from 'react';
+import { Layout, Menu } from 'antd';
+import { DashboardOutlined, ShoppingCartOutlined, ImportOutlined, FileTextOutlined, TruckOutlined, CarryOutOutlined, UserOutlined } from '@ant-design/icons';
+import { Link, useLocation } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 
-const drawerWidth = 240;
+const { Sider } = Layout;
 
-const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Data Import', icon: <CloudUploadIcon />, path: '/import' },
-  { text: 'Orders', icon: <ShoppingCartIcon />, path: '/orders' },
-  { text: 'Trips', icon: <LocalShippingIcon />, path: '/trips' },
-  { text: 'Loading', icon: <AssignmentIcon />, path: '/loading' },
-  { text: 'Documents', icon: <DescriptionIcon />, path: '/documents' },
-  { text: 'Reports', icon: <BarChartIcon />, path: '/reports' },
-];
+const Sidebar = () => {
+  const location = useLocation();
+  const { user } = useContext(AuthContext);
 
-function Sidebar({ isOpen, toggleSidebar }) {
   return (
-    <Drawer
-      sx={{
-        width: drawerWidth,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: drawerWidth,
-          boxSizing: 'border-box',
-          marginTop: '64px', // Ensures the sidebar starts below the header (AppBar height is 64px)
-        },
-      }}
-      variant="temporary" // Set to temporary for toggle functionality
-      anchor="left"
-      open={isOpen} // Open or close the drawer based on state
-      onClose={toggleSidebar} // Close sidebar when clicking outside
-    >
-      <List>
-        {menuItems.map((item) => (
-          <ListItem button key={item.text} component={RouterLink} to={item.path}>
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.text} />
-          </ListItem>
-        ))}
-      </List>
-    </Drawer>
+    <Sider width={200} className="site-layout-background">
+      <Menu
+        mode="inline"
+        defaultSelectedKeys={['1']}
+        defaultOpenKeys={['sub1']}
+        style={{ height: '100%', borderRight: 0 }}
+        selectedKeys={[location.pathname]}
+      >
+        {user ? (
+          <>
+            <Menu.Item key="/" icon={<DashboardOutlined />}>
+              <Link to="/">Dashboard</Link>
+            </Menu.Item>
+            <Menu.Item key="/import" icon={<ImportOutlined />}>
+              <Link to="/import">Data Import</Link>
+            </Menu.Item>
+            <Menu.Item key="/orders" icon={<ShoppingCartOutlined />}>
+              <Link to="/orders">Orders</Link>
+            </Menu.Item>
+            <Menu.Item key="/trips" icon={<TruckOutlined />}>
+              <Link to="/trips">Trips</Link>
+            </Menu.Item>
+            <Menu.Item key="/loadings" icon={<CarryOutOutlined />}>
+              <Link to="/loadings">Loading Confirmation</Link>
+            </Menu.Item>
+            <Menu.Item key="/reporting" icon={<FileTextOutlined />}>
+              <Link to="/reporting">End of Day</Link>
+            </Menu.Item>
+          </>
+        ) : (
+          <>
+            <Menu.Item key="/login" icon={<UserOutlined />}>
+              <Link to="/login">Login</Link>
+            </Menu.Item>
+            <Menu.Item key="/register" icon={<UserOutlined />}>
+              <Link to="/register">Register</Link>
+            </Menu.Item>
+          </>
+        )}
+      </Menu>
+    </Sider>
   );
-}
+};
 
 export default Sidebar;

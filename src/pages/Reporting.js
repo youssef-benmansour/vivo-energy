@@ -1,158 +1,157 @@
-// src/pages/Reporting.js
-
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import {
-  Container,
-  Typography,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  TextField,
-  Grid,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
-import { CloudDownload as DownloadIcon } from '@mui/icons-material';
+import { Card, Button, Table, message, DatePicker, Alert, Space, Typography } from 'antd';
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { getOrders } from '../services/api';
+import * as XLSX from 'xlsx';
+import moment from 'moment';
 
-const API_BASE_URL = 'http://localhost:3000/api'; // Adjust this to match your backend URL
+const { RangePicker } = DatePicker;
+const { Title, Text } = Typography;
 
-function Reporting() {
+const Reporting = () => {
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dateRange, setDateRange] = useState(null,null);
 
   useEffect(() => {
     fetchOrders();
-  }, [date]);
+  }, [dateRange]);
 
   const fetchOrders = async () => {
+    if (!dateRange || dateRange.length !== 2) {
+      message.warning('Please select a valid date range');
+      return;
+    }
+
     setLoading(true);
+    setError(null);
+    console.log('Fetching orders for date range:', dateRange.map(date => date.format('YYYY-MM-DD')));
+    
     try {
-      const response = await axios.get(`${API_BASE_URL}/orders?date=${date}`);
-      setOrders(response.data);
-      setLoading(false);
-    } catch (err) {
-      console.error('Error fetching orders:', err);
-      setError('Failed to fetch orders. Please try again later.');
+      const [startDate, endDate] = dateRange;
+      const response = await getOrders({
+        startDate: startDate.format('YYYY-MM-DD'),
+        endDate: endDate.format('YYYY-MM-DD')
+      });
+      console.log('API Response:', response);
+      
+      // Remove duplicates based on order ID
+      const uniqueOrders = Array.from(
+        new Map(response.data.map(order => [order.id, order])).values()
+      );
+      
+      setOrders(uniqueOrders);
+      filterOrders(uniqueOrders);
+      console.log('Unique orders set:', uniqueOrders);
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      setError(`Failed to fetch orders. Error: ${error.message}`);
+      message.error('Failed to fetch orders');
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleDateChange = (event) => {
-    setDate(event.target.value);
+  const filterOrders = (ordersToFilter = orders) => {
+    console.log('Filtering completed orders');
+    const filtered = ordersToFilter.filter(order => order.status === 'Completed');
+    console.log('Filtered orders:', filtered);
+    setFilteredOrders(filtered);
   };
 
-  const exportToCSV = () => {
-    const headers = [
-      "Sales Order", "Order Type", "Customer", "Customer Name", "Plant", "Plant Name",
-      "Ship To Party", "Ship To Name", "Valution Type", "City(Ship To)", "Item",
-      "Material Code", "Material Name", "Order Qty", "Sls.UOM", "Requested delivery date",
-      "Pat.Doc", "Trip Num", "Tour Start Date", "Org Name", "Driver Name", "Vehicle Id", "Status"
-    ];
+  const columns = [
+    { title: 'Item Number', dataIndex: 'Item', key: 'Item' },
+    { title: 'Record Identifier', dataIndex: 'id', key: 'id' },
+    { title: 'TRIP NUM', dataIndex: 'Trip Num', key: 'Trip Num' },
+    { title: 'ITEMCAT', dataIndex: 'Order Type', key: 'Order Type' },
+    { title: 'ORDER', dataIndex: 'Sales Order', key: 'Sales Order' },
+    { title: 'MATERIAL', dataIndex: 'Material Code', key: 'Material Code' },
+    { title: 'QUANTITY', dataIndex: 'Order Qty', key: 'Order Qty' },
+    { title: 'PLANT', dataIndex: 'Plant', key: 'Plant' },
+    { title: 'VALUATION TYPE', dataIndex: 'Valution Type', key: 'Valution Type' },
+    { title: 'VEHICLE', dataIndex: 'Vehicle Id', key: 'Vehicle Id' },
+    { title: 'Ville', dataIndex: 'City(Ship To)', key: 'City' },
+    { title: 'Date', dataIndex: 'updated_at', key: 'updated_at'},
+  ];
 
-    const csvContent = [
-      headers.join(','),
-      ...orders.map(order => 
-        headers.map(header => 
-          JSON.stringify(order[header] || '')
-        ).join(',')
-      )
-    ].join('\n');
+  const exportToExcel = () => {
+    const worksheet = XLSX.utils.json_to_sheet(
+      filteredOrders.map(order => ({
+        'Item Number': order.Item,
+        'Record Identifier': order.id,
+        'TRIP NUM': order['Trip Num'],
+        'ITEMCAT': order['Order Type'],
+        'EXTERNAL TRIP': '',
+        'ORDER': order['Sales Order'],
+        'numberDRIVER': order.Truck?.['Driver CIN'] ?? '',
+        'FWDAGENT': order.Truck?.['Haulier number'] ?? '',
+        'MATERIAL': order['Material Code'],
+        'DISPATCHER': order.Truck?.['Driver name'] ?? '',
+        'QUANTITY': order['Order Qty'],
+        'PLANT': order.Plant,
+        'UOM': order.Product?.['Base Unit of Measure'] ?? '',
+        'SLOC': '',
+        'Temp': order.Product?.temp ?? '',
+        'Density': order.Product?.density ?? '',
+        'DISTANCE': '',
+        'UOM_DISTANCE': 'KM',
+        'VALUATION TYPE': order['Valution Type'],
+        'VEHICLE': order.Truck?.Vehicle ?? '',
+        'HANDLING TYPE': 'TAXPAID',
+        'POSTING DATE(YYYYMMDD)': moment(order.updatedAt).format('YYYYMMDD'),
+        'trailer': order.Truck?.['Trailer Number'] ?? '',
+        'Batch': 'TAXPAID',
+        'Ville': order['City(Ship To)']
+      }))
+    );
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `orders_report_${date}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Completed Orders');
+    XLSX.writeFile(workbook, `Completed_Orders_${dateRange[0].format('YYYY-MM-DD')}_to_${dateRange[1].format('YYYY-MM-DD')}.xlsx`);
   };
-
-  if (loading) {
-    return <CircularProgress />;
-  }
-
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
 
   return (
-    <Container maxWidth="lg">
-      <Typography variant="h4" component="h1" gutterBottom>
-        Daily Orders Report
-      </Typography>
-      <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-        <Grid item xs={12} sm={6} md={4}>
-          <TextField
-            label="Report Date"
-            type="date"
-            value={date}
-            onChange={handleDateChange}
-            fullWidth
-            InputLabelProps={{
-              shrink: true,
+    <Card>
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Title level={2}>End of Day</Title>
+        <Space>
+          <RangePicker
+            value={dateRange}
+            onChange={(dates) => {
+              console.log('Date range changed:', dates);
+              setDateRange(dates);
             }}
           />
-        </Grid>
-        <Grid item xs={12} sm={6} md={4}>
           <Button
-            variant="contained"
-            color="primary"
-            startIcon={<DownloadIcon />}
-            onClick={exportToCSV}
-            fullWidth
+            type="primary"
+            icon={<DownloadOutlined />}
+            onClick={exportToExcel}
+            disabled={filteredOrders.length === 0}
           >
-            Export to CSV
+            Export to Excel
           </Button>
-        </Grid>
-      </Grid>
-      <TableContainer component={Paper}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Sales Order</TableCell>
-              <TableCell>Customer</TableCell>
-              <TableCell>Plant</TableCell>
-              <TableCell>Material</TableCell>
-              <TableCell>Quantity</TableCell>
-              <TableCell>Delivery Date</TableCell>
-              <TableCell>Trip Number</TableCell>
-              <TableCell>Driver</TableCell>
-              <TableCell>Vehicle</TableCell>
-              <TableCell>Status</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {orders.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell>{order["Sales Order"]}</TableCell>
-                <TableCell>{order["Customer Name"]}</TableCell>
-                <TableCell>{order["Plant Name"]}</TableCell>
-                <TableCell>{order["Material Name"]}</TableCell>
-                <TableCell>{`${order["Order Qty"]} ${order["Sls.UOM"]}`}</TableCell>
-                <TableCell>{new Date(order["Requested delivery date"]).toLocaleDateString()}</TableCell>
-                <TableCell>{order["Trip Num"]}</TableCell>
-                <TableCell>{order["Driver Name"]}</TableCell>
-                <TableCell>{order["Vehicle Id"]}</TableCell>
-                <TableCell>{order.Status}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Container>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={fetchOrders}
+          >
+            Refresh Data
+          </Button>
+        </Space>
+        {error && <Alert message={error} type="error" showIcon />}
+        <Text>Total orders: {filteredOrders.length}</Text>
+        <Table
+          columns={columns}
+          dataSource={filteredOrders}
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 'max-content' }}
+          pagination={{ pageSize: 10, showSizeChanger: true, showQuickJumper: true }}
+        />
+      </Space>
+    </Card>
   );
-}
+};
 
 export default Reporting;

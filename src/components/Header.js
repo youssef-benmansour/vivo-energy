@@ -1,43 +1,60 @@
-import React, { useState } from 'react';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
-import MenuIcon from '@mui/icons-material/Menu';
-import Sidebar from './Sidebar'; // Import your Sidebar component
+import React, { useContext } from 'react';
+import { Layout, Menu, Dropdown, Avatar, Button, Switch } from 'antd';
+import { UserOutlined, LogoutOutlined, LoginOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import { AuthContext } from '../context/AuthContext';
+import logo from './logo.png';  // Make sure the logo file is in the same folder
 
-function Header() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+const { Header } = Layout;
 
-  const toggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
+const AppHeader = () => {
+  const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
-  return (
-    <>
-      <AppBar position="static">
-        <Toolbar>
-          <IconButton
-            size="large"
-            edge="start"
-            color="inherit"
-            aria-label="menu"
-            sx={{ mr: 2 }}
-            onClick={toggleSidebar} // Toggle the sidebar on click
-          >
-            <MenuIcon />
-          </IconButton>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Fuel Delivery Management System
-          </Typography>
-          <Button color="inherit">Login</Button>
-        </Toolbar>
-      </AppBar>
-      {/* Render the sidebar, passing the toggle state */}
-      <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
-    </>
+  const menu = (
+    <Menu>
+      <Menu.Item key="1" icon={<UserOutlined />}>
+        Profile
+      </Menu.Item>
+      <Menu.Item key="2" icon={<LogoutOutlined />} onClick={handleLogout}>
+        Logout
+      </Menu.Item>
+    </Menu>
   );
-}
 
-export default Header;
+  return (
+    <Header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <img src={logo} alt="Logo" style={{ height: '60px', marginRight: '16px' }} />
+        <div style={{ color: 'white' }}>Fuel Delivery Management</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Switch
+          checked={theme === 'dark'}
+          onChange={toggleTheme}
+          checkedChildren="🌙"
+          unCheckedChildren="☀️"
+          style={{ marginRight: '16px' }}
+        />
+        {user ? (
+          <Dropdown overlay={menu} placement="bottomRight" arrow>
+            <Avatar icon={<UserOutlined />} />
+          </Dropdown>
+        ) : (
+          <Button icon={<LoginOutlined />} onClick={() => navigate('/login')}>
+            Login
+          </Button>
+        )}
+      </div>
+    </Header>
+  );
+};
+
+export default AppHeader;

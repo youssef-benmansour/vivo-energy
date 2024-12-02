@@ -1,101 +1,317 @@
-// src/services/api.js
-
 import axios from 'axios';
+import qs from 'qs'
 
-const API_BASE_URL = 'http://localhost:3000/api'; // Update this to match your backend URL
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3000/api';
 
-const apiClient = axios.create({
+const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-export const fetchClients = () => apiClient.get('/clients');
-export const fetchPlants = () => apiClient.get('/plants');
-export const fetchProducts = () => apiClient.get('/products');
-export const fetchPrices = () => apiClient.get('/prices');
-export const fetchTanks = () => apiClient.get('/tanks');
-export const fetchTrucks = () => apiClient.get('/trucks');
-export const fetchOrders = () => apiClient.get('/orders');
+// Add a request interceptor
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-// Trucks
-export const getTrucks = () => apiClient.get('/trucks');
-export const getTruck = (id) => apiClient.get(`/trucks/${id}`);
-export const createTruck = (truckData) => apiClient.post('/trucks', truckData);
-export const updateTruck = (id, truckData) => apiClient.put(`/trucks/${id}`, truckData);
-export const deleteTruck = (id) => apiClient.delete(`/trucks/${id}`);
-
-// Plants (Depots)
-export const getPlants = () => apiClient.get('/plants');
-export const getPlant = (id) => apiClient.get(`/plants/${id}`);
-export const createPlant = (plantData) => apiClient.post('/plants', plantData);
-export const updatePlant = (id, plantData) => apiClient.put(`/plants/${id}`, plantData);
-export const deletePlant = (id) => apiClient.delete(`/plants/${id}`);
-
-// Prices
-export const getPrices = () => apiClient.get('/prices');
-export const getPrice = (id) => apiClient.get(`/prices/${id}`);
-export const createPrice = (priceData) => apiClient.post('/prices', priceData);
-export const updatePrice = (id, priceData) => apiClient.put(`/prices/${id}`, priceData);
-export const deletePrice = (id) => apiClient.delete(`/prices/${id}`);
-
-// Products
-export const getProducts = () => apiClient.get('/products');
-export const getProduct = (id) => apiClient.get(`/products/${id}`);
-export const createProduct = (productData) => apiClient.post('/products', productData);
-export const updateProduct = (id, productData) => apiClient.put(`/products/${id}`, productData);
-export const deleteProduct = (id) => apiClient.delete(`/products/${id}`);
-
-// Bacs (Tanks)
-export const getBacs = () => apiClient.get('/bacs');
-export const getBac = (id) => apiClient.get(`/bacs/${id}`);
-export const createBac = (bacData) => apiClient.post('/bacs', bacData);
-export const updateBac = (id, bacData) => apiClient.put(`/bacs/${id}`, bacData);
-export const deleteBac = (id) => apiClient.delete(`/bacs/${id}`);
-
-// Clients
-export const getClients = () => apiClient.get('/clients');
-export const getClient = (id) => apiClient.get(`/clients/${id}`);
-export const createClient = (clientData) => apiClient.post('/clients', clientData);
-export const updateClient = (id, clientData) => apiClient.put(`/clients/${id}`, clientData);
-export const deleteClient = (id) => apiClient.delete(`/clients/${id}`);
-
-// Orders
-export const getOrders = (params) => apiClient.get('/orders', { params });
-export const getOrder = (id) => apiClient.get(`/orders/${id}`);
-export const createOrder = (orderData) => apiClient.post('/orders', orderData);
-export const updateOrder = (id, orderData) => apiClient.put(`/orders/${id}`, orderData);
-export const deleteOrder = (id) => apiClient.delete(`/orders/${id}`);
-
-// Trips
-export const getTrips = (params) => apiClient.get('/trips', { params });
-export const getTrip = (id) => apiClient.get(`/trips/${id}`);
-export const createTrip = (tripData) => apiClient.post('/trips', tripData);
-export const updateTrip = (id, tripData) => apiClient.put(`/trips/${id}`, tripData);
-export const deleteTrip = (id) => apiClient.delete(`/trips/${id}`);
-
-// Loading Confirmation
-export const confirmLoading = (tripId, loadingData) => apiClient.post(`/trips/${tripId}/confirm-loading`, loadingData);
-
-// File Import
-export const importData = (type, data) => apiClient.post(`/import/${type}`, data);
-
-// Document Generation
-export const generateDeliveryNote = (orderId) => apiClient.post(`/documents/delivery-note/${orderId}`);
-export const generateInvoice = (orderId) => apiClient.post(`/documents/invoice/${orderId}`);
-
-// Reporting
-export const getDailyOrderReport = (date) => apiClient.get('/reports/daily-orders', { params: { date } });
-
-// Error handling middleware
-apiClient.interceptors.response.use(
+// Add a response interceptor
+api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    console.error('API call error:', error.response);
-    // You can add global error handling here, such as showing a notification
+  async (error) => {
+    if (error.response.status === 401) {
+      // If the error is due to an invalid token, clear the token and redirect to login
+      localStorage.removeItem('token');
+      window.location = '/login';
+    }
     return Promise.reject(error);
   }
 );
 
-export default apiClient;
+// Add authentication-related API calls
+export const login = (credentials) => api.post('/auth/login', credentials);
+export const register = async (userData) => {
+  try {
+    const response = await api.post('/auth/register', userData);
+    return response;
+  } catch (error) {
+    console.error('API Register Error:', error);
+    console.error('Error Response:', error.response);
+    console.error('Error Data:', error.response?.data);
+    throw error;
+  }
+};export const getCurrentUser = () => api.get('/auth/me');
+
+// Data API calls
+export const getPrices = () => api.get('/data/prices');
+export const getPlants = () => api.get('/data/plants');
+export const getProducts = () => api.get('/data/products');
+export const getClients = () => api.get('/data/clients');
+export const getTanks = () => api.get('/data/tanks');
+export const getTrucks = (attributes = []) => {
+  return api.get('/data/trucks', {
+    params: {
+      attributes: attributes.join(',')
+    }
+  });
+};
+
+export const updateProduct = async (productId, productData) => {
+  try {
+    const response = await api.put(`/data/products/${productId}`, productData);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating product:', error);
+    throw error;
+  }
+};
+
+export const getAllProducts = async () => {
+  try {
+    const response = await api.get('/data/products');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching all products:', error);
+    throw error;
+  }
+};
+
+// Import API calls
+export const importData = (importType, formData) => {
+  return api.post(`/import/${importType}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+};
+
+export const getImportHistory = async (page = 1, limit = 10) => {
+  try {
+    const response = await api.get('/import/history', { params: { page, limit } });
+    return response.data;
+  } catch (error) {
+    console.error('Error in getImportHistory:', error);
+    throw error;
+  }
+};
+
+// Order related API calls
+export const getOrders = ({ startDate, endDate }) => {
+  return api.get('/orders', {
+    params: {
+      startDate,
+      endDate
+    }
+  });
+};
+export const createOrder = async (orderData) => {
+  try {
+    const response = await api.post('/orders', orderData);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating order:', error);
+    throw error;
+  }
+};
+
+export const getOrderById = async (id) => {
+  try {
+    const response = await api.get(`/orders/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error in getOrderById API call:', error);
+    throw error;
+  }
+};
+
+export const updateOrder = async (id, orderData) => {
+  try {
+    let response;
+    if (Array.isArray(id)) {
+      // Bulk update
+      response = await api.put('/orders/bulk-update', {
+        orderIds: id,
+        ...orderData
+      });
+    } else {
+      // Single order update
+      response = await api.put(`/orders/${id}`, orderData);
+    }
+    return response.data;
+  } catch (error) {
+    console.error('Error updating order:', error);
+    throw error;
+  }
+};
+
+export const deleteOrder = (id) => {
+  return api.delete(`/orders/${id}`);
+};
+
+export const deleteMultipleOrders = (orderIds) => {
+  return api.post('/orders/delete-multiple', { orderIds });
+};
+
+export const getLatestSalesOrder = async () => {
+  try {
+    const response = await api.get('/orders/latest-sales-order');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching latest sales order:', error);
+    throw error;
+  }
+};
+
+export const createMultipleOrders = async (ordersData) => {
+  try {
+    const response = await api.post('/orders/create-multiple', ordersData);
+    return response.data;
+  } catch (error) {
+    console.error('Error in createMultipleOrders:', error);
+    throw error;
+  }
+};
+
+export const importOrders = (ordersData) => {
+  return api.post('/orders/import', ordersData);
+};
+
+// Trip-related API calls
+export const createTrip = (tripData) => {
+  return api.post('/trips', tripData);
+};
+
+export const getTrips = async (page = 1, pageSize = 10) => {
+  console.log(`Fetching trips with page: ${page}, pageSize: ${pageSize}`);
+  try {
+    const response = await api.get('/trips', {
+      params: { page, limit: pageSize },
+      paramsSerializer: params => qs.stringify(params)
+    });
+    console.log('API response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching trips:', error);
+    throw error;
+  }
+};
+
+export const updateTrip = async (tripId, tripData) => {
+  try {
+    console.log(`Updating trip with ID: ${tripId}`, tripData);
+    const response = await api.put(`/trips/${tripId}`, tripData);
+    console.log('Trip update response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating trip:', error);
+    console.error('Error response:', error.response);
+    throw error;
+  }
+};
+
+export const deleteTrip = (tripId) => {
+  return api.delete(`/trips/${tripId}`);
+};
+
+export const getTripById = async (tripId) => {
+  try {
+    const response = await api.get(`/trips/${tripId}`);
+    
+    if (response.data && response.data.Orders) {
+      // Ensure Orders is always an array
+      response.data.Orders = Array.isArray(response.data.Orders) ? response.data.Orders : [response.data.Orders];
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching trip by ID:', error);
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
+    throw error;
+  }
+};
+
+export const getTripDetails = async (tripId) => {
+  try {
+    console.log('Fetching trip details for tripId:', tripId);
+    const response = await api.get(`/trips/${tripId}`);
+    console.log('Trip details response:', response.data);
+    return response.data;  // Make sure this line is present
+  } catch (error) {
+    console.error('Error fetching trip details:', error);
+    throw error;
+  }
+};
+
+export const updateTripLoading = async (tripId, loadingData) => {
+  console.log(`Updating trip loading status for ID: ${tripId}`, loadingData);
+  try {
+    const response = await api.put(`/trips/${tripId}/loading`, loadingData);
+    console.log('Update trip loading status response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating trip loading status:', error);
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
+    throw error;
+  }
+};
+
+export const getOrdersByTripNum = async (tripNum) => {
+  try {
+    const response = await api.get(`/orders`, { params: { tripNum } });
+    return response;
+  } catch (error) {
+    console.error('Error fetching orders by trip number:', error);
+    throw error;
+  }
+};
+
+export const getTruckById = (vehicleId) => {
+  return api.get(`/trucks/${vehicleId}`);
+};
+
+export const getClientById = (clientId) => {
+  return api.get(`/clients/${clientId}`);
+};
+
+export default {
+  getPrices,
+  getPlants,
+  getProducts,
+  getClients,
+  getAllProducts,
+  getTanks,
+  getTrucks,
+  importData,
+  getImportHistory,
+  getOrders,
+  createOrder,
+  getOrderById,
+  updateOrder,
+  deleteOrder,
+  deleteMultipleOrders,
+  createMultipleOrders,
+  createTrip,
+  getTrips,
+  updateTrip,
+  deleteTrip,
+  getTripById,
+  getOrdersByTripNum,
+  getTruckById,
+  getClientById,
+  updateProduct,
+  login,
+  register,
+  getCurrentUser,
+  updateTripLoading,
+};
